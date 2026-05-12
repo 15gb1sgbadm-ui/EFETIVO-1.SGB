@@ -761,9 +761,9 @@ async function fetchSheets(){
     const hdrs=rows[hdrIdx];
     const dataRows=rows.slice(hdrIdx+1).filter(r=>r.some(c=>c&&c.trim()));
     console.log('[SGB] hdrIdx='+hdrIdx+' cols='+hdrs.length+' rows='+dataRows.length);
-    // MATERIAIS: colunas BB=53, BC=54, BD=55, BE=56, BF=57
+    // MATERIAIS: colunas BA=52, BB=53, BC=54, BD=55, BE=56
     MATERIAIS_KEYS=[];MATERIAIS_LABELS={};
-    [53,54,55,56,57].forEach(ci=>{
+    [52,53,54,55,56].forEach(ci=>{
       if(ci>=hdrs.length)return;
       const lbl=(hdrs[ci]||'').trim();
       if(!lbl)return;
@@ -900,8 +900,8 @@ function parseRows(hdrs,rows){
   const gLMP  =(r,g5)=>ga(r,g5,g5.replace('º','o').replace('°','o'));
   return rows.filter(r=>gNome(r)).map((r,i)=>{
     const mat={};
-    // Lê materiais EXCLUSIVAMENTE pelas colunas BB-BF (índices 53-57)
-    [53,54,55,56,57].forEach(ci=>{
+    // Lê materiais EXCLUSIVAMENTE pelas colunas BA-BE (índices 52-56)
+    [52,53,54,55,56].forEach(ci=>{
       if(ci<hdrs.length){
         const lbl=(hdrs[ci]||'').trim();
         if(!lbl)return;
@@ -914,6 +914,7 @@ function parseRows(hdrs,rows){
       re:gRE(r),niver:gNiver(r),ultima_promocao:gUprom(r),
       cpf:gCPF(r),contato:gCont(r),email:gEmail(r),
       endereco:gEnd(r),
+      admissao:normDate((r[1]||'').toString().trim()),
       cnh_cat:gCNHC(r),cnh_num:gCNHN(r),cnh_val:gCNHV(r),
       val_tox:gTox(r),
       ferias1:gFer1(r),ferias2:gFer2(r),val_ias:gIAS(r),
@@ -1392,6 +1393,7 @@ function openM(id){
       <div class="mf"><label>Contato</label><span>${d.contato||'—'}</span></div>
       <div class="mf"><label>E-mail</label><span style="font-size:12px">${d.email||'—'}</span></div>
       <div class="mf"><label>Aniversário</label><span>${d.niver||'—'}</span></div>
+      <div class="mf"><label>Data de Admissão</label><span>${d.admissao||'—'}</span></div>
       ${d.endereco?`<div class="mf" style="grid-column:1/-1"><label>Endereço</label><span style="font-size:12px">${d.endereco}</span></div>`:''}
       <div class="mf"><label>Última Promoção</label><span>${d.ultima_promocao||'—'}</span></div>
       <div class="mf"><label>CNH — Categoria</label><span>${d.cnh_cat||'—'}</span></div>
