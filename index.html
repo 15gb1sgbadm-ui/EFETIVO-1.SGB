@@ -779,32 +779,27 @@ async function fetchSheets(){
     const newMatKeys = [];
     const newMatLabels = {};
     let currentGroup = "";
-    
-    // Lista de termos que NUNCA devem ser considerados materiais (campos administrativos)
-    const blacklist = ["NOME", "RE", "E.B.", "PRONTIDÃO", "EMAIL", "E-MAIL", "GMAIL", "CONTATO", "TELEFONE", "CPF", "CNH", "ANIVERSÁRIO", "NIVER", "DATA"];
 
     for(let i=0; i<hdrs.length; i++) {
       const g = (row1[i] || "").trim().toUpperCase();
+      // Se a linha 1 tiver conteúdo, atualizamos o grupo atual.
+      // Se estiver em branco, mantém o grupo anterior (comportamento de colunas mescladas).
       if(g !== "") {
         if(g.includes("CURSO")) currentGroup = "CURSO";
         else if(g.includes("MATERIAIS") || g.includes("MATERIAL")) currentGroup = "MATERIAIS";
-        else currentGroup = "OUTROS";
+        else currentGroup = "OUTROS"; // Qualquer outro texto na linha 1 encerra o grupo anterior
       }
 
       const lbl = (hdrs[i] || "").trim();
-      const lblUpper = lbl.toUpperCase();
       if(!lbl) continue;
-      
-      // Se o rótulo estiver na blacklist, encerra o grupo de materiais/cursos para esta coluna
-      if(blacklist.some(b => lblUpper.includes(b))) {
-        // Se encontramos um campo administrativo, forçamos a saída do grupo
-        if(currentGroup === "MATERIAIS" || currentGroup === "CURSO") currentGroup = "OUTROS";
-        continue;
-      }
 
       if(currentGroup === "CURSO") {
         newCursos.push(lbl);
-      } else if(currentGroup === "MATERIAIS") {
+      if(currentGroup === "MATERIAIS") {
+        // Exclui campos pessoais que possam estar após o bloco de materiais
+        const lblNorm = lbl.toUpperCase().replace(/\s+/g,'');
+        const camposPessoais = ['GMAIL','EMAIL','E-MAIL','CPF','CONTATO','TELEFONE','CELULAR','ENDEREÇO','ENDERECO','RESIDENCIA','RESIDÊNCIA'];
+        if(camposPessoais.some(c=>lblNorm.includes(c.replace(/\s+/g,''))))continue;
         newMatKeys.push(lbl);
         newMatLabels[lbl] = lbl;
       }
@@ -1274,19 +1269,20 @@ function _feriasBlocos(mesFiltro){
         const inicio = parseDMY(f);
         if(!inicio) return false;
         
-        // Férias de 15 dias (quinzenais)
-        // Criamos o período de 15 dias
-        const mIdx = mesIdx - 1; // 0-indexed para Date
-        const currentYear = new Date().getFullYear(); // Assume o ano atual ou da data de início
+        // Férias de 15 dias (14 dias após o início)
+        const termino = new Date(inicio);
+        termino.setDate(termino.getDate() + 14);
         
-        // Vamos verificar cada um dos 15 dias das férias
-        for(let day=0; day<15; day++) {
-          const diaFerias = new Date(inicio);
-          diaFerias.setDate(diaFerias.getDate() + day);
-          // Se qualquer dia das férias cair no mês mesIdx, o militar deve aparecer
-          if(diaFerias.getMonth() + 1 === mesIdx) return true;
-        }
-        return false;
+        // Verifica se o mês selecionado está entre o mês de início e o mês de término
+        // Ou se algum dia do intervalo pertence ao mês mesIdx
+        const mInicio = inicio.getMonth() + 1;
+        const yInicio = inicio.getFullYear();
+        const mTermino = termino.getMonth() + 1;
+        const yTermino = termino.getFullYear();
+        
+        // Simplificação: se o mês de início ou o mês de término coincidir com o mês filtrado
+        // (Isso cobre a maioria dos casos de férias quinzenais que atravessam a virada do mês)
+        return mInicio === mesIdx || mTermino === mesIdx;
       });
     });
     
@@ -1629,15 +1625,22 @@ function buildFerias(){
     return 99;
   }
 
-  // Agrupa por mês: ferias1 e ferias2 separadamente, militares podem aparecer em 2 meses
+  // Agrupa por mês: ferias1 e ferias2 separadamente, militares aparecem em TODOS os meses que suas férias abrangem
   const porMes=Array.from({length:12},()=>[]);
   DATA.forEach(d=>{
     [[d.ferias1,'1ªQ'],[d.ferias2,'2ªQ']].forEach(([dt,lbl])=>{
       if(!dt)return;
       const p=parseDMY(dt);if(!p)return;
-      const m=p.getMonth();
-      if(!porMes[m].some(e=>e.id===d.id&&e.lbl===lbl))
-        porMes[m].push({id:d.id,nome:d.nome,re:d.re,eb:d.eb,prontidao:d.prontidao,dt,lbl,_dt:p});
+      // Férias duram 30 dias a partir da data de início
+      const fim=new Date(p.getFullYear(),p.getMonth(),p.getDate()+29);
+      // Itera cada mês coberto pelo período de férias
+      let cur=new Date(p.getFullYear(),p.getMonth(),1);
+      while(cur<=fim){
+        const m=cur.getMonth();
+        if(!porMes[m].some(e=>e.id===d.id&&e.lbl===lbl))
+          porMes[m].push({id:d.id,nome:d.nome,re:d.re,eb:d.eb,prontidao:d.prontidao,dt,lbl,_dt:p});
+        cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+      }
     });
   });
 
