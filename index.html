@@ -795,11 +795,7 @@ async function fetchSheets(){
 
       if(currentGroup === "CURSO") {
         newCursos.push(lbl);
-      if(currentGroup === "MATERIAIS") {
-        // Exclui campos pessoais que possam estar após o bloco de materiais
-        const lblNorm = lbl.toUpperCase().replace(/\s+/g,'');
-        const camposPessoais = ['GMAIL','EMAIL','E-MAIL','CPF','CONTATO','TELEFONE','CELULAR','ENDEREÇO','ENDERECO','RESIDENCIA','RESIDÊNCIA'];
-        if(camposPessoais.some(c=>lblNorm.includes(c.replace(/\s+/g,''))))continue;
+      } else if(currentGroup === "MATERIAIS") {
         newMatKeys.push(lbl);
         newMatLabels[lbl] = lbl;
       }
@@ -1625,22 +1621,15 @@ function buildFerias(){
     return 99;
   }
 
-  // Agrupa por mês: ferias1 e ferias2 separadamente, militares aparecem em TODOS os meses que suas férias abrangem
+  // Agrupa por mês: ferias1 e ferias2 separadamente, militares podem aparecer em 2 meses
   const porMes=Array.from({length:12},()=>[]);
   DATA.forEach(d=>{
     [[d.ferias1,'1ªQ'],[d.ferias2,'2ªQ']].forEach(([dt,lbl])=>{
       if(!dt)return;
       const p=parseDMY(dt);if(!p)return;
-      // Férias duram 30 dias a partir da data de início
-      const fim=new Date(p.getFullYear(),p.getMonth(),p.getDate()+29);
-      // Itera cada mês coberto pelo período de férias
-      let cur=new Date(p.getFullYear(),p.getMonth(),1);
-      while(cur<=fim){
-        const m=cur.getMonth();
-        if(!porMes[m].some(e=>e.id===d.id&&e.lbl===lbl))
-          porMes[m].push({id:d.id,nome:d.nome,re:d.re,eb:d.eb,prontidao:d.prontidao,dt,lbl,_dt:p});
-        cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
-      }
+      const m=p.getMonth();
+      if(!porMes[m].some(e=>e.id===d.id&&e.lbl===lbl))
+        porMes[m].push({id:d.id,nome:d.nome,re:d.re,eb:d.eb,prontidao:d.prontidao,dt,lbl,_dt:p});
     });
   });
 
