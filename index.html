@@ -655,6 +655,12 @@ let selMes=new Date().getMonth()+1;
 
 // ── DATE HELPERS ─────────────────────────────────────────────────────────────
 function parseDMY(s){if(!s)return null;const p=s.split('/');if(p.length!==3)return null;return new Date(+p[2],+p[1]-1,+p[0]);}
+function addDays(s, days) {
+  const d = parseDMY(s);
+  if(!d) return '—';
+  d.setDate(d.getDate() + days);
+  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+}
 function today(){return new Date();}
 function daysUntil(dateStr){const d=parseDMY(dateStr);if(!d)return null;return Math.ceil((d-today())/(1000*60*60*24));}
 function monthsUntil(dateStr){const days=daysUntil(dateStr);return days===null?null:days/30.44;}
@@ -751,6 +757,12 @@ async function fetchSheets(){
     toast('⏳ Buscando dados da planilha...','inf');
     const text=await fetchWithProxy(url);
     const rows=parseCSV(text);
+    // Validação de cabeçalhos mesclados (Linha 1 da planilha)
+    const row1 = rows[0];
+    const cursoHeader = (row1[31] || "").toUpperCase();
+    const matHeader = (row1[53] || "").toUpperCase();
+    console.log('[SGB] Cabeçalho AF1:', cursoHeader, '| BB1:', matHeader);
+
     if(rows.length<2)throw new Error('Planilha vazia ou sem dados.');
     // Auto-detecta linha do cabeçalho
     let hdrIdx=0;
@@ -762,26 +774,50 @@ async function fetchSheets(){
     const dataRows=rows.slice(hdrIdx+1).filter(r=>r.some(c=>c&&c.trim()));
     console.log('[SGB] hdrIdx='+hdrIdx+' cols='+hdrs.length+' rows='+dataRows.length);
 
-    // ATUALIZAÇÃO DINÂMICA DE CURSOS: Lê cabeçalhos entre AF (índice 31) e AZ (índice 51)
+    // ATUALIZAÇÃO DINÂMICA DE CURSOS E MATERIAIS: Lê Grupos na Linha 1 e subitens na Linha do Cabeçalho
     const newCursos = [];
-    for(let i=31; i<=51; i++){
-      const h = (hdrs[i] || "").trim();
-      if(h) newCursos.push(h);
+    const newMatKeys = [];
+    const newMatLabels = {};
+    let currentGroup = "";
+    
+    // Lista de termos que NUNCA devem ser considerados materiais (campos administrativos)
+    const blacklist = ["NOME", "RE", "E.B.", "PRONTIDÃO", "EMAIL", "E-MAIL", "GMAIL", "CONTATO", "TELEFONE", "CPF", "CNH", "ANIVERSÁRIO", "NIVER", "DATA"];
+
+    for(let i=0; i<hdrs.length; i++) {
+      const g = (row1[i] || "").trim().toUpperCase();
+      if(g !== "") {
+        if(g.includes("CURSO")) currentGroup = "CURSO";
+        else if(g.includes("MATERIAIS") || g.includes("MATERIAL")) currentGroup = "MATERIAIS";
+        else currentGroup = "OUTROS";
+      }
+
+      const lbl = (hdrs[i] || "").trim();
+      const lblUpper = lbl.toUpperCase();
+      if(!lbl) continue;
+      
+      // Se o rótulo estiver na blacklist, encerra o grupo de materiais/cursos para esta coluna
+      if(blacklist.some(b => lblUpper.includes(b))) {
+        // Se encontramos um campo administrativo, forçamos a saída do grupo
+        if(currentGroup === "MATERIAIS" || currentGroup === "CURSO") currentGroup = "OUTROS";
+        continue;
+      }
+
+      if(currentGroup === "CURSO") {
+        newCursos.push(lbl);
+      } else if(currentGroup === "MATERIAIS") {
+        newMatKeys.push(lbl);
+        newMatLabels[lbl] = lbl;
+      }
     }
+
     if(newCursos.length > 0) {
       CURSOS.length = 0;
       CURSOS.push(...newCursos);
     }
-
-    // MATERIAIS: colunas BA=52, BB=53, BC=54, BD=55, BE=56
-    MATERIAIS_KEYS=[];MATERIAIS_LABELS={};
-    [52,53,54,55,56].forEach(ci=>{
-      if(ci>=hdrs.length)return;
-      const lbl=(hdrs[ci]||'').trim();
-      if(!lbl)return;
-      MATERIAIS_KEYS.push(lbl);
-      MATERIAIS_LABELS[lbl]=lbl;
-    });
+    if(newMatKeys.length > 0) {
+      MATERIAIS_KEYS = newMatKeys;
+      MATERIAIS_LABELS = newMatLabels;
+    }
     const parsed=parseRows(hdrs,dataRows);
     if(!parsed.length)throw new Error('Nenhum militar encontrado. Verifique a coluna "NOME COMPLETO".');
     // Preserva mat dos dados anteriores se a planilha não trouxer novos
@@ -912,13 +948,12 @@ function parseRows(hdrs,rows){
   const gLMP  =(r,g5)=>ga(r,g5,g5.replace('º','o').replace('°','o'));
   return rows.filter(r=>gNome(r)).map((r,i)=>{
     const mat={};
-    // Lê materiais EXCLUSIVAMENTE pelas colunas BA-BE (índices 52-56)
-    [52,53,54,55,56].forEach(ci=>{
-      if(ci<hdrs.length){
-        const lbl=(hdrs[ci]||'').trim();
-        if(!lbl)return;
-        const v=(r[ci]||'').toString().trim();
-        if(v&&v!=='0'&&v!=='nan'&&v!=='-')mat[lbl]=v;
+    // Lê materiais dinamicamente com base nas chaves identificadas
+    MATERIAIS_KEYS.forEach(lbl => {
+      const ci = hdrs.indexOf(lbl);
+      if(ci !== -1) {
+        const v = (r[ci] || '').toString().trim();
+        if(v && v !== '0' && v !== 'nan' && v !== '-') mat[lbl] = v;
       }
     });
     return {
@@ -1231,11 +1266,32 @@ function _feriasBlocos(mesFiltro){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const blocos=[];
   const mesesLoop = mesFiltro ? [parseInt(mesFiltro,10)] : Array.from({length:12},(_,i)=>i+1);
-  mesesLoop.forEach(i=>{
-    const mm=String(i).padStart(2,'0');
-    const itens=DATA.filter(d=>[d.ferias1,d.ferias2].some(f=>{const v=(f||'').replace(/\D/g,''); return v.length>=4 && v.slice(2,4)===mm;}));
+  
+  mesesLoop.forEach(mesIdx=>{
+    const itens=DATA.filter(d=>{
+      return [d.ferias1, d.ferias2].some(f=>{
+        if(!f) return false;
+        const inicio = parseDMY(f);
+        if(!inicio) return false;
+        
+        // Férias de 15 dias (quinzenais)
+        // Criamos o período de 15 dias
+        const mIdx = mesIdx - 1; // 0-indexed para Date
+        const currentYear = new Date().getFullYear(); // Assume o ano atual ou da data de início
+        
+        // Vamos verificar cada um dos 15 dias das férias
+        for(let day=0; day<15; day++) {
+          const diaFerias = new Date(inicio);
+          diaFerias.setDate(diaFerias.getDate() + day);
+          // Se qualquer dia das férias cair no mês mesIdx, o militar deve aparecer
+          if(diaFerias.getMonth() + 1 === mesIdx) return true;
+        }
+        return false;
+      });
+    });
+    
     if(!itens.length) return;
-    blocos.push({mes:meses[i-1], itens});
+    blocos.push({mes:meses[mesIdx-1], itens});
   });
   return blocos;
 }
@@ -1268,7 +1324,7 @@ function printFeriasMes(){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const blocos=_feriasBlocos(mm);
   const titulo = mm ? `Férias — ${meses[parseInt(mm,10)-1]}` : 'Relatório de Férias por Mês';
-  const blocosHtml=blocos.map(b=>`<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 10px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff"><th style="text-align:left;padding:8px 10px">Nome</th><th style="text-align:left;padding:8px 10px">E.B.</th><th style="text-align:left;padding:8px 10px">RE</th><th style="text-align:left;padding:8px 10px">1ª Quinzena</th><th style="text-align:left;padding:8px 10px">2ª Quinzena</th></tr></thead><tbody>${b.itens.map((d,idx)=>`<tr style="background:${idx%2===0?'#fff':'#f4f6fb'}"><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.nome||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.eb||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;font-family:monospace">${d.re||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias1||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias2||'—'}</td></tr>`).join('')}</tbody></table></section>`).join('');
+  const blocosHtml=blocos.map(b=>`<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 10px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff"><th style="text-align:left;padding:8px 10px">Nome</th><th style="text-align:left;padding:8px 10px">E.B.</th><th style="text-align:left;padding:8px 10px">RE</th><th style="text-align:left;padding:8px 10px">1º Bloco (Início e Término)</th><th style="text-align:left;padding:8px 10px">2º Bloco (Início e Término)</th></tr></thead><tbody>${b.itens.map((d,idx)=>`<tr style="background:${idx%2===0?'#fff':'#f4f6fb'}"><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.nome||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.eb||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;font-family:monospace">${d.re||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias1 ? d.ferias1 + ' a ' + addDays(d.ferias1, 14) : '—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias2 ? d.ferias2 + ' a ' + addDays(d.ferias2, 14) : '—'}</td></tr>`).join('')}</tbody></table></section>`).join('');
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>${titulo}</title><style>body{font-family:Arial,sans-serif;background:#f5f7fa;color:#111;padding:24px}h1{color:#1a1a2e;font-size:20px;margin-bottom:20px;border-bottom:3px solid #1a1a2e;padding-bottom:8px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:28px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}.print-btn{position:fixed;top:12px;right:16px;padding:8px 18px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)}@media print{body{background:#fff;padding:0}.wrap{max-width:none;padding:0;box-shadow:none;border-radius:0}.print-btn{display:none}}</style></head><body><button class="print-btn" onclick="window.print()">🖨 Imprimir</button><div class="wrap"><h1>${titulo}</h1>${blocosHtml||'<p style="color:#888">Nenhum registro de férias.</p>'}</div></body></html>`);
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
