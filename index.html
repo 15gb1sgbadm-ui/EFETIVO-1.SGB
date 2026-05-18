@@ -782,13 +782,9 @@ async function fetchSheets(){
 
     for(let i=0; i<hdrs.length; i++) {
       const g = (row1[i] || "").trim().toUpperCase();
-      // Se a linha 1 tiver conteúdo, atualizamos o grupo atual.
-      // Se estiver em branco, mantém o grupo anterior (comportamento de colunas mescladas).
-      if(g !== "") {
-        if(g.includes("CURSO")) currentGroup = "CURSO";
-        else if(g.includes("MATERIAIS") || g.includes("MATERIAL")) currentGroup = "MATERIAIS";
-        else currentGroup = "OUTROS"; // Qualquer outro texto na linha 1 encerra o grupo anterior
-      }
+      if(g.includes("CURSO")) currentGroup = "CURSO";
+      else if(g.includes("MATERIAIS") || g.includes("MATERIAL")) currentGroup = "MATERIAIS";
+      else if(g !== "") currentGroup = ""; 
 
       const lbl = (hdrs[i] || "").trim();
       if(!lbl) continue;
@@ -796,8 +792,13 @@ async function fetchSheets(){
       if(currentGroup === "CURSO") {
         newCursos.push(lbl);
       } else if(currentGroup === "MATERIAIS") {
-        newMatKeys.push(lbl);
-        newMatLabels[lbl] = lbl;
+        // Excluir campos de e-mail que possam ter sido capturados indevidamente
+        const lblUp = lbl.toUpperCase();
+        const isEmail = lblUp.includes('EMAIL') || lblUp.includes('E-MAIL') || lblUp.includes('GMAIL') || lblUp === 'E-MAIL';
+        if(!isEmail){
+          newMatKeys.push(lbl);
+          newMatLabels[lbl] = lbl;
+        }
       }
     }
 
@@ -1253,37 +1254,36 @@ function buildQSEAnalysis(){
       <div class="alert-card ok"><div class="alert-num" style="color:var(--g)">${cobertura}%</div><div class="alert-lbl">Cobertura do QSE</div></div>`;
   }
 }
+function _periodoPassaMes(dtStr, mesIdx){
+  // Retorna true se qualquer dia do período de 15 dias (início até início+14) está dentro do mês mesIdx (0-based)
+  if(!dtStr) return false;
+  const inicio = parseDMY(dtStr);
+  if(!inicio) return false;
+  const fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 14);
+  // O período [inicio, fim] intersecta o mês se:
+  // início do mês <= fim do período E fim do mês >= início do período
+  const anoI = inicio.getFullYear();
+  const anoF = fim.getFullYear();
+  // Verifica todos os anos que o período pode cobrir
+  for(let ano = anoI; ano <= anoF; ano++){
+    const primeiroDiaMes = new Date(ano, mesIdx, 1);
+    const ultimoDiaMes = new Date(ano, mesIdx+1, 0);
+    if(inicio <= ultimoDiaMes && fim >= primeiroDiaMes) return true;
+  }
+  return false;
+}
 function _feriasBlocos(mesFiltro){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const blocos=[];
   const mesesLoop = mesFiltro ? [parseInt(mesFiltro,10)] : Array.from({length:12},(_,i)=>i+1);
-  
-  mesesLoop.forEach(mesIdx=>{
-    const itens=DATA.filter(d=>{
-      return [d.ferias1, d.ferias2].some(f=>{
-        if(!f) return false;
-        const inicio = parseDMY(f);
-        if(!inicio) return false;
-        
-        // Férias de 15 dias (14 dias após o início)
-        const termino = new Date(inicio);
-        termino.setDate(termino.getDate() + 14);
-        
-        // Verifica se o mês selecionado está entre o mês de início e o mês de término
-        // Ou se algum dia do intervalo pertence ao mês mesIdx
-        const mInicio = inicio.getMonth() + 1;
-        const yInicio = inicio.getFullYear();
-        const mTermino = termino.getMonth() + 1;
-        const yTermino = termino.getFullYear();
-        
-        // Simplificação: se o mês de início ou o mês de término coincidir com o mês filtrado
-        // (Isso cobre a maioria dos casos de férias quinzenais que atravessam a virada do mês)
-        return mInicio === mesIdx || mTermino === mesIdx;
-      });
-    });
-    
+  mesesLoop.forEach(i=>{
+    const mesIdx = i - 1; // 0-based
+    const itens=DATA.filter(d=>
+      _periodoPassaMes(d.ferias1, mesIdx) || _periodoPassaMes(d.ferias2, mesIdx)
+    );
     if(!itens.length) return;
-    blocos.push({mes:meses[mesIdx-1], itens});
+    blocos.push({mes:meses[mesIdx], itens});
   });
   return blocos;
 }
