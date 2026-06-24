@@ -460,6 +460,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
 <div class="panel" id="pfer">
   <div class="alert-grid" id="fer-stats"></div>
   <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;margin:12px 0 8px;flex-wrap:wrap">
+    <label style="font-size:12px;color:var(--m);font-weight:600">Filtrar por E.B.:</label>
+    <select id="fer-eb-sel" onchange="buildFerias();buildFeriasPreview()" style="background:var(--s2);border:1px solid var(--b);color:var(--t);border-radius:8px;padding:6px 12px;font-size:12px;font-family:'Barlow';cursor:pointer">
+      <option value="">— Todas as E.B. —</option>
+    </select>
+    <label style="font-size:12px;color:var(--m);font-weight:600">Prontidão:</label>
+    <select id="fer-pr-sel" onchange="buildFerias();buildFeriasPreview()" style="background:var(--s2);border:1px solid var(--b);color:var(--t);border-radius:8px;padding:6px 12px;font-size:12px;font-family:'Barlow';cursor:pointer">
+      <option value="">— Todas —</option>
+      <option value="VERDE">Verde</option>
+      <option value="AZUL">Azul</option>
+      <option value="AMARELA">Amarela</option>
+      <option value="ADM">ADM</option>
+    </select>
     <label style="font-size:12px;color:var(--m);font-weight:600">Mês para imprimir:</label>
     <select id="fer-mes-sel" onchange="buildFeriasPreview()" style="background:var(--s2);border:1px solid var(--b);color:var(--t);border-radius:8px;padding:6px 12px;font-size:12px;font-family:'Barlow';cursor:pointer">
       <option value="">— Todos os meses —</option>
@@ -477,6 +489,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
       <option value="12">Dezembro</option>
     </select>
     <button class="btnr" onclick="printFeriasMes()" style="background:rgba(215,38,56,.2);border-color:rgba(215,38,56,.5);color:var(--red)">🖨 Imprimir Férias</button>
+    <button class="btnr" onclick="printFeriasEB()" style="background:rgba(41,128,185,.2);border-color:rgba(41,128,185,.5);color:#60A5FA">🏠 Imprimir por E.B.</button>
   </div>
   <div id="fer-print-preview" style="background:#f7f8fa;border:1px solid #d0d4db;border-radius:10px;padding:20px;margin-bottom:16px;min-height:60px;display:none">
     <div id="fer-preview-content"></div>
@@ -1471,13 +1484,15 @@ function _periodoPassaMes(dtStr, mesIdx){
   }
   return false;
 }
-function _feriasBlocos(mesFiltro){
+function _feriasBlocos(mesFiltro, ebFiltro, prFiltro){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const blocos=[];
+  let SRC=ebFiltro?DATA.filter(d=>d.eb===ebFiltro):DATA;
+  if(prFiltro)SRC=SRC.filter(d=>d.prontidao===prFiltro);
   const mesesLoop = mesFiltro ? [parseInt(mesFiltro,10)] : Array.from({length:12},(_,i)=>i+1);
   mesesLoop.forEach(i=>{
     const mesIdx = i - 1; // 0-based
-    const itens=DATA.filter(d=>
+    const itens=SRC.filter(d=>
       _periodoPassaMes(d.ferias1, mesIdx) || _periodoPassaMes(d.ferias2, mesIdx)
     );
     if(!itens.length) return;
@@ -1490,8 +1505,10 @@ function buildFeriasPreview(){
   const preview=document.getElementById('fer-print-preview');
   const content=document.getElementById('fer-preview-content');
   const mm=sel?sel.value:'';
+  const ebFil=(document.getElementById('fer-eb-sel')||{}).value||'';
+  const prFil=(document.getElementById('fer-pr-sel')||{}).value||'';
   if(!mm){preview.style.display='none';content.innerHTML='';return;}
-  const blocos=_feriasBlocos(mm);
+  const blocos=_feriasBlocos(mm, ebFil, prFil);
   if(!blocos.length){
     preview.style.display='block';
     content.innerHTML='<p style="color:#888;font-size:13px;text-align:center;padding:16px 0">Nenhuma férias registrada para este mês.</p>';
@@ -1511,12 +1528,84 @@ function buildFeriasPreview(){
 function printFeriasMes(){
   const sel=document.getElementById('fer-mes-sel');
   const mm=sel?sel.value:'';
+  const ebFil=(document.getElementById('fer-eb-sel')||{}).value||'';
+  const prFil=(document.getElementById('fer-pr-sel')||{}).value||'';
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const blocos=_feriasBlocos(mm);
+  const blocos=_feriasBlocos(mm, ebFil, prFil);
   const titulo = mm ? `Férias — ${meses[parseInt(mm,10)-1]}` : 'Relatório de Férias por Mês';
   const blocosHtml=blocos.map(b=>`<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 10px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff"><th style="text-align:left;padding:8px 10px">Nome</th><th style="text-align:left;padding:8px 10px">E.B.</th><th style="text-align:left;padding:8px 10px">RE</th><th style="text-align:left;padding:8px 10px">1º Bloco (Início e Término)</th><th style="text-align:left;padding:8px 10px">2º Bloco (Início e Término)</th></tr></thead><tbody>${b.itens.map((d,idx)=>`<tr style="background:${idx%2===0?'#fff':'#f4f6fb'}"><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.nome||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.eb||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;font-family:monospace">${d.re||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias1 ? d.ferias1 + ' a ' + addDays(d.ferias1, 14) : '—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias2 ? d.ferias2 + ' a ' + addDays(d.ferias2, 14) : '—'}</td></tr>`).join('')}</tbody></table></section>`).join('');
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>${titulo}</title><style>body{font-family:Arial,sans-serif;background:#f5f7fa;color:#111;padding:24px}h1{color:#1a1a2e;font-size:20px;margin-bottom:20px;border-bottom:3px solid #1a1a2e;padding-bottom:8px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:28px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}.print-btn{position:fixed;top:12px;right:16px;padding:8px 18px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)}@media print{body{background:#fff;padding:0}.wrap{max-width:none;padding:0;box-shadow:none;border-radius:0}.print-btn{display:none}}</style></head><body><button class="print-btn" onclick="window.print()">🖨 Imprimir</button><div class="wrap"><h1>${titulo}</h1>${blocosHtml||'<p style="color:#888">Nenhum registro de férias.</p>'}</div></body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+}
+// ── FÉRIAS ANUAIS POR E.B. ────────────────────────────────────────────────────
+function printFeriasEB(){
+  const ebFil=(document.getElementById('fer-eb-sel')||{}).value||'';
+  const prFil=(document.getElementById('fer-pr-sel')||{}).value||'';
+
+  // Determina quais EBs imprimir
+  const ebs = ebFil ? [ebFil] : [...new Set(DATA.map(d=>d.eb).filter(Boolean))].sort();
+
+  const prColors={VERDE:'#27ae60',AZUL:'#2980b9',AMARELA:'#e67e22',ADM:'#8e44ad'};
+
+  function listaEB(eb){
+    // Pega todos os militares da EB que têm ao menos uma quinzena
+    let src=DATA.filter(d=>d.eb===eb&&(d.ferias1||d.ferias2));
+    if(prFil)src=src.filter(d=>d.prontidao===prFil);
+    // Ordena pela data mais antiga entre ferias1/ferias2
+    src.sort((a,b)=>{
+      const da=parseDMY(a.ferias1||a.ferias2), db=parseDMY(b.ferias1||b.ferias2);
+      if(!da)return 1; if(!db)return -1;
+      return da-db;
+    });
+    return src;
+  }
+
+  let html='';
+  ebs.forEach(eb=>{
+    const itens=listaEB(eb);
+    html+=`<section style="margin-bottom:32px">
+      <h2 style="font-family:Arial,sans-serif;font-size:15px;color:#fff;background:#1a1a2e;margin:0;padding:8px 14px;border-radius:6px 6px 0 0;letter-spacing:1px">🏠 ${eb} <span style="font-size:11px;font-weight:400;opacity:.7">(${itens.length} militar${itens.length!==1?'es':''})</span></h2>`;
+    if(!itens.length){
+      html+=`<p style="padding:10px 14px;color:#888;background:#f5f7fa;border:1px solid #dde;border-radius:0 0 6px 6px;font-size:12px">Nenhuma férias registrada.</p></section>`;
+      return;
+    }
+    const rows=itens.map((d,idx)=>{
+      const bg=idx%2===0?'#fff':'#f4f6fb';
+      const prColor=prColors[d.prontidao]||'#888';
+      const prBadge=d.prontidao?`<span style="background:${prColor}20;color:${prColor};border:1px solid ${prColor}40;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">${d.prontidao}</span>`:'—';
+      const f1=d.ferias1?(d.ferias1+' a '+addDays(d.ferias1,14)):'—';
+      const f2=d.ferias2?(d.ferias2+' a '+addDays(d.ferias2,14)):'—';
+      return `<tr style="background:${bg}">
+        <td style="padding:6px 10px;border-bottom:1px solid #e0e4ee;font-size:12px">${d.nome||'—'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e0e4ee">${prBadge}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e0e4ee;color:#1565c0;font-weight:600;font-size:12px">${f1}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e0e4ee;color:#1565c0;font-weight:600;font-size:12px">${f2}</td>
+      </tr>`;
+    }).join('');
+    html+=`<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#2c3e6b;color:#fff">
+        <th style="text-align:left;padding:7px 10px;font-size:12px">Nome</th>
+        <th style="text-align:left;padding:7px 10px;font-size:12px">Prontidão</th>
+        <th style="text-align:left;padding:7px 10px;font-size:12px">1ª Quinzena (Início — Término)</th>
+        <th style="text-align:left;padding:7px 10px;font-size:12px">2ª Quinzena (Início — Término)</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></section>`;
+  });
+
+  const titulo = ebFil ? `Férias Anuais — ${ebFil}` : 'Férias Anuais — Todas as E.B.';
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>${titulo}</title><style>
+    body{font-family:Arial,sans-serif;background:#f5f7fa;color:#111;padding:20px}
+    h1{color:#1a1a2e;font-size:20px;margin-bottom:20px;border-bottom:3px solid #1a1a2e;padding-bottom:8px}
+    .wrap{max-width:1100px;margin:0 auto;background:#fff;padding:24px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+    .print-btn{position:fixed;top:12px;right:16px;padding:8px 18px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700}
+    @media print{body{background:#fff;padding:0}.wrap{max-width:none;padding:0;box-shadow:none;border-radius:0}.print-btn{display:none}section{break-inside:avoid}}
+  </style></head><body>
+    <button class="print-btn" onclick="window.print()">🖨 Imprimir</button>
+    <div class="wrap"><h1>${titulo}</h1>${html||'<p style="color:#888">Nenhum registro de férias.</p>'}</div>
+  </body></html>`);
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 }
 // ── CNH ──────────────────────────────────────────────────────────────────────
@@ -1856,16 +1945,74 @@ function rIAS(){
 }
 
 // ── FÉRIAS POR QUINZENA ───────────────────────────────────────────────────────
+function _ferPopulateEBSel(){
+  const sel=document.getElementById('fer-eb-sel');
+  if(!sel)return;
+  const cur=sel.value;
+  while(sel.options.length>1)sel.remove(1);
+  [...new Set(DATA.map(d=>d.eb).filter(Boolean))].sort().forEach(eb=>{
+    const o=document.createElement('option');o.value=eb;o.textContent=eb;sel.appendChild(o);
+  });
+  if(cur)sel.value=cur;
+}
 function buildFerias(){
-  const tot=DATA.length,c1=DATA.filter(d=>d.ferias1).length,c2=DATA.filter(d=>d.ferias2).length;
-  const cb=DATA.filter(d=>d.ferias1&&d.ferias2).length;
+  _ferPopulateEBSel();
+  const ebFil=(document.getElementById('fer-eb-sel')||{}).value||'';
+  const prFil=(document.getElementById('fer-pr-sel')||{}).value||'';
+  let SRC=ebFil?DATA.filter(d=>d.eb===ebFil):DATA;
+  if(prFil)SRC=SRC.filter(d=>d.prontidao===prFil);
+  const tot=SRC.length,c1=SRC.filter(d=>d.ferias1).length,c2=SRC.filter(d=>d.ferias2).length;
+  const cb=SRC.filter(d=>d.ferias1&&d.ferias2).length;
   document.getElementById('fer-stats').innerHTML=`
     <div class="alert-card ok"><div class="alert-num" style="color:var(--g)">${cb}</div><div class="alert-lbl">Ambas quinzenas</div></div>
     <div class="alert-card"><div class="alert-num" style="color:var(--y)">${c1}</div><div class="alert-lbl">1ª quinzena</div></div>
     <div class="alert-card"><div class="alert-num" style="color:#60A5FA">${c2}</div><div class="alert-lbl">2ª quinzena</div></div>
     <div class="alert-card danger"><div class="alert-num" style="color:var(--red)">${tot-cb}</div><div class="alert-lbl">Incompleto</div></div>`;
 
-  // Ordem hierárquica para ordenação secundária
+  const grid=document.getElementById('fer-grid');grid.innerHTML='';
+  const prc={VERDE:'#27AE60',AZUL:'#2980B9',AMARELA:'#F5A623',ADM:'#8E44AD'};
+
+  // ── MODO LISTA PLANA (quando EB filtrada) ────────────────────────────────────
+  if(ebFil){
+    const comFerias=SRC.filter(d=>d.ferias1||d.ferias2).sort((a,b)=>{
+      const da=parseDMY(a.ferias1||a.ferias2),db=parseDMY(b.ferias1||b.ferias2);
+      if(!da)return 1;if(!db)return -1;return da-db;
+    });
+    if(!comFerias.length){
+      grid.innerHTML=`<div style="padding:20px;color:var(--m);font-size:13px;text-align:center">Nenhuma férias registrada para esta E.B.</div>`;
+      return;
+    }
+    const wrap=document.createElement('div');
+    wrap.style.cssText='background:var(--s2);border:1px solid var(--b);border-radius:12px;overflow:hidden';
+    // cabeçalho
+    const thead=document.createElement('div');
+    thead.style.cssText='display:grid;grid-template-columns:1fr auto auto auto;background:var(--s3);padding:9px 16px;gap:12px;font-family:"Barlow Condensed";font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--m)';
+    thead.innerHTML='<span>Nome</span><span style="text-align:center">Prontidão</span><span style="min-width:150px;text-align:left">1ª Quinzena</span><span style="min-width:150px;text-align:left">2ª Quinzena</span>';
+    wrap.appendChild(thead);
+    comFerias.forEach((d,idx)=>{
+      const ac=prc[d.prontidao]||'#888';
+      const row=document.createElement('div');
+      row.onclick=()=>openM(d.id);
+      row.style.cssText=`cursor:pointer;display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:12px;padding:9px 16px;border-top:1px solid var(--b);transition:background .15s;${idx%2===1?'background:rgba(255,255,255,.02)':''}`;
+      row.onmouseover=()=>row.style.background='rgba(255,255,255,.05)';
+      row.onmouseout=()=>row.style.background=idx%2===1?'rgba(255,255,255,.02)':'';
+      const f1Html=d.ferias1?`<b style="color:var(--bl)">${d.ferias1}</b> <span style="color:var(--m);font-size:11px">a ${addDays(d.ferias1,14)}</span>`:'<span style="color:var(--m)">—</span>';
+      const f2Html=d.ferias2?`<b style="color:var(--bl)">${d.ferias2}</b> <span style="color:var(--m);font-size:11px">a ${addDays(d.ferias2,14)}</span>`:'<span style="color:var(--m)">—</span>';
+      row.innerHTML=`
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <div style="width:3px;height:32px;border-radius:3px;background:${ac};flex-shrink:0"></div>
+          <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.nome}</span>
+        </div>
+        <div style="text-align:center">${bp(d.prontidao)}</div>
+        <div style="min-width:150px;font-size:12px">${f1Html}</div>
+        <div style="min-width:150px;font-size:12px">${f2Html}</div>`;
+      wrap.appendChild(row);
+    });
+    grid.appendChild(wrap);
+    return;
+  }
+
+  // ── MODO BLOCOS POR MÊS (sem filtro de EB) ──────────────────────────────────
   const hierarquia=['CAP PM','1TEN PM','2TEN PM','SUBTEN PM','1SGT PM','2SGT PM','3SGT PM',
     'CB PM','SD PM 2CL','SD PM 2Cl','SD PM'];
   function hierRank(nome){
@@ -1873,10 +2020,8 @@ function buildFerias(){
     for(let i=0;i<hierarquia.length;i++){if(n.includes(hierarquia[i].toUpperCase()))return i;}
     return 99;
   }
-
-  // Agrupa por mês: ferias1 e ferias2 separadamente, militares podem aparecer em 2 meses
   const porMes=Array.from({length:12},()=>[]);
-  DATA.forEach(d=>{
+  SRC.forEach(d=>{
     [[d.ferias1,'1ªQ'],[d.ferias2,'2ªQ']].forEach(([dt,lbl])=>{
       if(!dt)return;
       const p=parseDMY(dt);if(!p)return;
@@ -1885,15 +2030,10 @@ function buildFerias(){
         porMes[m].push({id:d.id,nome:d.nome,re:d.re,eb:d.eb,prontidao:d.prontidao,dt,lbl,_dt:p});
     });
   });
-
-  const grid=document.getElementById('fer-grid');grid.innerHTML='';
   const now=new Date();
-  const prc={VERDE:'#27AE60',AZUL:'#2980B9',AMARELA:'#F5A623',ADM:'#8E44AD'};
   const MC=['#D72638','#c0392b','#e67e22','#f39c12','#d4ac0d','#27ae60','#1e8449','#2980b9','#1a5276','#8e44ad','#7d3c98','#D72638'];
-
   for(let m=0;m<12;m++){
     const color=MC[m];
-    // Ordenar: cronológico primeiro, depois hierárquico
     const entries=porMes[m].sort((a,b)=>{
       const da=a._dt.getDate(),db=b._dt.getDate();
       if(da!==db)return da-db;
@@ -1901,10 +2041,8 @@ function buildFerias(){
     });
     const total=entries.length;
     const isPast=new Date(now.getFullYear(),m+1,0)<now;
-
     const block=document.createElement('div');
     block.style.cssText='background:var(--s2);border:1px solid var(--b);border-radius:12px;overflow:hidden;margin-bottom:10px';
-
     const hdr=document.createElement('div');
     hdr.style.cssText=`background:linear-gradient(135deg,${color}25 0%,var(--s3) 100%);border-bottom:3px solid ${color};padding:13px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none`;
     hdr.innerHTML=`
@@ -1913,7 +2051,6 @@ function buildFerias(){
         <div style="background:${color}20;border:1px solid ${color}40;color:${color};padding:3px 11px;border-radius:20px;font-family:'Barlow Condensed';font-size:12px;font-weight:700">${total} férias</div>
       </div>
       <span style="color:var(--m);font-size:16px;transition:transform .2s" class="ftg-${m}">▼</span>`;
-
     const body=document.createElement('div');
     body.id='fb-'+m;
     if(!total){
@@ -2109,7 +2246,7 @@ function printCarimboCivis(){
   const ids=[...document.querySelectorAll('#car-civ-grid .carimbo[data-selected="1"]')].map(c=>c.dataset.id);
   if(!ids.length){toast('Selecione ao menos um civil para imprimir.','err');return;}
   const civis=ids.map(id=>CIVIS.find(d=>String(d.id)===String(id))).filter(Boolean);
-  const cardsHtml=civis.map(d=>{
+  const cards=civis.map(d=>{
     const {bg,fg}=gradColorPair(d.nome);
     const fotoSrc=FOTO_CACHE_CIVIS[d.cpf]||'';
     const fotoEl=fotoSrc
@@ -2120,13 +2257,8 @@ function printCarimboCivis(){
     const funcRows=`<div class="cr"><span class="cn">${funcao.toUpperCase()}</span></div>`;
     const emptyRows=Array(6).fill('<div class="cr"></div>').join('');
     return `<div class="sc"><div class="sh" style="background:${bg};color:${fg}"><div class="sg">${grupo}</div><div class="sn">${d.nome}</div></div><div class="sb"><div class="sf"><div class="sfi">${fotoEl}</div></div><div class="ss">${funcRows}${emptyRows}</div></div></div>`;
-  }).join('');
-  const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Carimbos Civis 1ºSGB</title>
-  <style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;background:#fff}.page{display:flex;flex-wrap:wrap;gap:4mm;align-content:flex-start}.sc{width:56mm;height:56mm;border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff;page-break-inside:avoid}.sh{padding:2mm 2mm 1.5mm;text-align:center;border-bottom:2px solid rgba(0,0,0,.2);flex-shrink:0;height:14mm;display:flex;flex-direction:column;justify-content:center;overflow:hidden}.sg{font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}.sn{font-size:8pt;font-weight:900;text-decoration:underline;line-height:1.1;margin-top:.5mm;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.sb{display:flex;flex:1;min-height:0}.sf{width:30mm;border-right:1.5px solid #ccc;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f9f9f9}.sfi{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}.ss{flex:1;display:flex;flex-direction:column}.cr{flex:1;border-bottom:1px solid #ccc;display:flex;align-items:center;padding:0 2.5mm}.cr:last-child{border-bottom:none}.cn{font-size:7pt;font-weight:700;color:#111}@media print{.no-print{display:none}}.print-btn{position:fixed;top:10px;right:10px;padding:8px 18px;background:#2980b9;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700}</style></head><body>
-  <button class="print-btn no-print" onclick="window.print()">🖨 Imprimir Carimbos</button>
-  <div class="page">${cardsHtml}</div></body></html>`);
-  w.document.close();
+  });
+  _cardsGrid(cards,'Carimbos Civis 1ºSGB','#2980b9');
 }
 
 function printCarimboByMonth(){
@@ -2150,30 +2282,61 @@ function printCarimboByMonth(){
   printCarimbo();
 }
 
+function _cardsGrid(cardsArr,title,btnColor){
+  // Chunk into pages of 12 (4×3), padded with empty slots
+  const PER_PAGE=12;
+  const pages=[];
+  for(let i=0;i<cardsArr.length;i+=PER_PAGE){
+    const chunk=cardsArr.slice(i,i+PER_PAGE);
+    while(chunk.length<PER_PAGE)chunk.push(null);
+    pages.push(chunk);
+  }
+  const pagesHtml=pages.map(pg=>`<div class="page">${pg.map(c=>c===null?'<div class="se"></div>':c).join('')}</div>`).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+  <style>
+    @page{size:A4 landscape;margin:10mm}
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{font-family:Arial,sans-serif;background:#fff}
+    .page{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);grid-auto-flow:column;gap:3mm;width:277mm;height:190mm;page-break-after:always}
+    .page:last-child{page-break-after:auto}
+    .sc{border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff}
+    .se{border:1px dashed #d0d0d0;border-radius:1.5mm;background:#fafafa}
+    .sh{padding:2mm 2mm 1.5mm;text-align:center;border-bottom:2px solid rgba(0,0,0,.2);flex-shrink:0;height:14mm;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
+    .sg{font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}
+    .sn{font-size:8pt;font-weight:900;text-decoration:underline;line-height:1.1;margin-top:.5mm;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+    .sb{display:flex;flex:1;min-height:0}
+    .sf{width:45%;border-right:1.5px solid #ccc;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f9f9f9}
+    .sfi{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .ss{flex:1;display:flex;flex-direction:column}
+    .cr{flex:1;border-bottom:1px solid #ccc;display:flex;align-items:center;padding:0 2mm}
+    .cr:last-child{border-bottom:none}
+    .cn{font-size:6.5pt;font-weight:700;color:#111}
+    @media print{.no-print{display:none}}
+    .print-btn{position:fixed;top:10px;right:10px;padding:8px 18px;background:${btnColor};color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700}
+  </style></head><body>
+  <button class="print-btn no-print" onclick="window.print()">🖨 Imprimir Carimbos</button>
+  ${pagesHtml}</body></html>`);
+  w.document.close();
+}
 function printCarimbo(){
   const ids=[...document.querySelectorAll('#car-grid .carimbo[data-selected="1"]')].map(c=>c.dataset.id);
   if(!ids.length){toast('Selecione ao menos um militar para imprimir.','err');return;}
   const militares=ids.map(id=>DATA.find(d=>String(d.id)===String(id))).filter(Boolean);
-  function gradColor(nome){return gradColorPair(nome);}
-  const cardsHtml=militares.map(d=>{
-    const {bg,fg}=gradColor(d.nome);
+  const cards=militares.map(d=>{
+    const {bg,fg}=gradColorPair(d.nome);
     const m=d.nome.match(/^(.*?PM)\s+(\S+)\s+(.+)$/i);
     const grad=m?m[1].trim():''; const re=m?m[2].trim():d.re; const nomeP=m?m[3].trim():d.nome;
     const fotoSrc=FOTO_CACHE[d.re]||'';
     const fotoEl=fotoSrc
-      ?`<img src="${fotoSrc}" style="width:100%;height:100%;object-fit:cover;object-position:top"><div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#bbb">${getInitials(d.nome)}</div>`
+      ?`<img src="${fotoSrc}" style="width:100%;height:100%;object-fit:cover;object-position:top">`
       :`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#bbb">${getInitials(d.nome)}</div>`;
     const cursos=d.cursos||[];
     const cRows=cursos.slice(0,7).map(c=>`<div class="cr"><span class="cn">${c}</span></div>`).join('');
     const eRows=Array(Math.max(0,7-cursos.length)).fill('<div class="cr"></div>').join('');
     return `<div class="sc"><div class="sh" style="background:${bg};color:${fg}"><div class="sg">${grad}${grad?' — ':''}${re}</div><div class="sn">${nomeP}</div></div><div class="sb"><div class="sf"><div class="sfi">${fotoEl}</div></div><div class="ss">${cRows}${eRows}</div></div></div>`;
-  }).join('');
-  const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Carimbos 1ºSGB</title>
-  <style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;background:#fff}.page{display:flex;flex-wrap:wrap;gap:4mm;align-content:flex-start}.sc{width:56mm;height:56mm;border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff;page-break-inside:avoid}.sh{padding:2mm 2mm 1.5mm;text-align:center;border-bottom:2px solid rgba(0,0,0,.2);flex-shrink:0;height:14mm;display:flex;flex-direction:column;justify-content:center;overflow:hidden}.sg{font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}.sn{font-size:8pt;font-weight:900;text-decoration:underline;line-height:1.1;margin-top:.5mm;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.sb{display:flex;flex:1;min-height:0}.sf{width:30mm;border-right:1.5px solid #ccc;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f9f9f9}.sfi{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}.ss{flex:1;display:flex;flex-direction:column}.cr{flex:1;border-bottom:1px solid #ccc;display:flex;align-items:center;padding:0 2.5mm}.cr:last-child{border-bottom:none}.cn{font-size:7pt;font-weight:700;color:#111}@media print{.no-print{display:none}}.print-btn{position:fixed;top:10px;right:10px;padding:8px 18px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700}</style></head><body>
-  <button class="print-btn no-print" onclick="window.print()">🖨 Imprimir Carimbos</button>
-  <div class="page">${cardsHtml}</div></body></html>`);
-  w.document.close();
+  });
+  _cardsGrid(cards,'Carimbos 1ºSGB','#c0392b');
 }
 
 function buildMat(){
