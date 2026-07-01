@@ -2303,10 +2303,10 @@ function _cardsGrid(cardsArr,title,btnColor){
     @page{size:A4 landscape;margin:10mm}
     *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body{font-family:Arial,sans-serif;background:#fff}
-    .page{display:grid;grid-template-columns:repeat(4,56mm);grid-template-rows:repeat(3,56mm);grid-auto-flow:column;direction:rtl;gap:3mm;margin:0 auto;page-break-after:always}
+    .page{display:grid;grid-template-columns:repeat(4,56mm);grid-template-rows:repeat(3,56mm);grid-auto-flow:column;direction:rtl;justify-content:space-between;align-content:space-between;width:277mm;height:190mm;margin:0 auto;page-break-after:always;transform:rotate(180deg)}
     .page:last-child{page-break-after:auto}
-    .sc{direction:ltr;width:56mm;height:56mm;border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff}
-    .se{direction:ltr;width:56mm;height:56mm;border:1px dashed #d0d0d0;border-radius:1.5mm;background:#fafafa}
+    .sc{direction:ltr;width:56mm;height:56mm;border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff;transform:rotate(180deg)}
+    .se{direction:ltr;width:56mm;height:56mm}
     .sh{padding:2mm 2mm 1.5mm;text-align:center;border-bottom:2px solid rgba(0,0,0,.2);flex-shrink:0;height:14mm;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
     .sg{font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}
     .sn{font-size:8pt;font-weight:900;text-decoration:underline;line-height:1.1;margin-top:.5mm;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
