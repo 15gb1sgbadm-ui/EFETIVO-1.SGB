@@ -2296,17 +2296,38 @@ function _cardsGrid(cardsArr,title,btnColor){
     while(chunk.length<PER_PAGE)chunk.push(null);
     pages.push(chunk);
   }
-  const pagesHtml=pages.map(pg=>`<div class="page">${pg.map(c=>c===null?'<div class="se"></div>':c).join('')}</div>`).join('');
+  // Posição fixa (grid-column/grid-row) de cada um dos 12 slots da folha.
+  // Calculada para reproduzir a disposição solicitada:
+  //   [10][7][4][1]      já com a folha girada 180° na impressão, resultando em:
+  //   [11][8][5][2]  →   [3][6][9][12]
+  //   [12][9][6][3]      [2][5][8][11]
+  //                      [1][4][7][10]
+  // Definida explicitamente via grid-column/grid-row (em vez de direction:rtl +
+  // transform:rotate, que se mostraram inconsistentes entre navegadores) para
+  // garantir a mesma posição em qualquer motor de renderização.
+  function slotPos(i){ // i = 1..12 (ordem de seleção)
+    const col=Math.ceil(i/3);
+    const row=3-((i-1)%3);
+    return `grid-column:${col};grid-row:${row}`;
+  }
+  const pagesHtml=pages.map(pg=>{
+    const cells=pg.map((c,idx)=>{
+      const pos=slotPos(idx+1);
+      if(c===null)return `<div class="se" style="${pos}"></div>`;
+      return c.replace('<div class="sc"','<div class="sc" style="'+pos+'"');
+    }).join('');
+    return `<div class="page">${cells}</div>`;
+  }).join('');
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
   <style>
     @page{size:A4 landscape;margin:10mm}
     *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body{font-family:Arial,sans-serif;background:#fff}
-    .page{display:grid;grid-template-columns:repeat(4,56mm);grid-template-rows:repeat(3,56mm);grid-auto-flow:column;direction:rtl;gap:3mm;margin:0 auto;page-break-after:always;transform:rotate(180deg)}
+    .page{display:grid;grid-template-columns:repeat(4,56mm);grid-template-rows:repeat(3,56mm);gap:3mm;margin:0 auto;page-break-after:always}
     .page:last-child{page-break-after:auto}
-    .sc{direction:ltr;width:56mm;height:56mm;border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff;transform:rotate(180deg)}
-    .se{direction:ltr;width:56mm;height:56mm}
+    .sc{width:56mm;height:56mm;border:2px solid #444;border-radius:1.5mm;overflow:hidden;display:flex;flex-direction:column;background:#fff}
+    .se{width:56mm;height:56mm}
     .sh{padding:2mm 2mm 1.5mm;text-align:center;border-bottom:2px solid rgba(0,0,0,.2);flex-shrink:0;height:14mm;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
     .sg{font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}
     .sn{font-size:8pt;font-weight:900;text-decoration:underline;line-height:1.1;margin-top:.5mm;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
@@ -2320,9 +2341,19 @@ function _cardsGrid(cardsArr,title,btnColor){
     @media print{.no-print{display:none}}
     .print-btn{position:fixed;top:10px;right:10px;padding:8px 18px;background:${btnColor};color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700}
   </style></head><body>
-  <button class="print-btn no-print" onclick="window.print()">🖨 Imprimir Carimbos</button>
-  ${pagesHtml}</body></html>`);
+  <button class="print-btn no-print" onclick="window.focus();window.print()">🖨 Imprimir Carimbos</button>
+  ${pagesHtml}
+  <script>
+    window.onload = function(){
+      window.focus();
+      setTimeout(function(){ window.focus(); window.print(); }, 300);
+    };
+  <\/script>
+  </body></html>`);
   w.document.close();
+  // Garante foco na nova aba/janela e tenta disparar a impressão automaticamente
+  // (o botão continua disponível caso o navegador bloqueie a chamada automática)
+  setTimeout(()=>{ try{ w.focus(); }catch(e){} }, 100);
 }
 function printCarimbo(){
   const ids=[...document.querySelectorAll('#car-grid .carimbo[data-selected="1"]')].map(c=>c.dataset.id);
