@@ -2183,18 +2183,19 @@ function initPmsPanel(){
   var PERIOD_DAYS = Math.round((PERIOD_END - PERIOD_START) / 86400000);
   var EXPECTED_DAILY_RATE = PERIOD_AMOUNT / PERIOD_DAYS;
 
-  // A planilha tem uma aba por trimestre civil. O total de gasto ("Total")
-  // muda de linha em cada aba porque a lista de itens tem tamanhos diferentes;
-  // as células de saldo (L32) e repasse total (L35) ficam sempre na mesma linha.
-  // Mapeamento conferido célula a célula na planilha em 25/08/2026.
+  // A planilha tem uma aba por trimestre civil. Em vez de linha/coluna fixa
+  // (que quebra sempre que a lista de despesas ganha ou perde linhas),
+  // localizamos os valores pelo texto do rótulo ao lado deles na própria aba.
   var QUARTER_TABS = {
-    1: { sheet: '1º Tri', gastoCell: 'F129' },
-    2: { sheet: '2º Tri', gastoCell: 'F143' },
-    3: { sheet: '3º Tri', gastoCell: 'F157' },
-    4: { sheet: '4º Tri', gastoCell: 'F157' }
+    1: { sheet: '1º Tri' },
+    2: { sheet: '2º Tri' },
+    3: { sheet: '3º Tri' },
+    4: { sheet: '4º Tri' }
   };
-  var SALDO_CELL = 'L32';
-  var TOTAL_CELL = 'L35';
+  var GASTO_LABEL = 'Total Gasto';
+  var SALDO_LABEL = 'Saldo Disponível';
+  // Faixa ampla o suficiente para cobrir a lista de despesas mesmo se ela crescer.
+  var SEARCH_RANGE = 'A1:H400';
 
   function getCurrentQuarterTab(){
     var now = new Date();
@@ -2209,14 +2210,6 @@ function initPmsPanel(){
       '&range=' + encodeURIComponent(range);
   }
 
-  function stripQuotes(s){
-    s = s.trim();
-    if(s.startsWith('"') && s.endsWith('"')){
-      s = s.slice(1,-1).replace(/""/g,'"');
-    }
-    return s;
-  }
-
   function parseBRL(s){
     var cleaned = s.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',', '.');
     var n = parseFloat(cleaned);
@@ -2227,11 +2220,56 @@ function initPmsPanel(){
     return n.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
   }
 
-  async function fetchCell(sheetName, range){
+  // Parser de CSV simples (lida com campos entre aspas e vírgula/quebra de linha dentro deles,
+  // que é como o Google Sheets exporta valores como "R$ 1.234,56").
+  function parseCsv(text){
+    var rows = [];
+    var row = [];
+    var field = '';
+    var inQuotes = false;
+    for(var i=0;i<text.length;i++){
+      var c = text[i];
+      if(inQuotes){
+        if(c === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; }
+          else { inQuotes = false; }
+        } else { field += c; }
+      } else {
+        if(c === '"'){ inQuotes = true; }
+        else if(c === ','){ row.push(field); field=''; }
+        else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+        else if(c === '\r'){ /* ignora, trata \r\n */ }
+        else { field += c; }
+      }
+    }
+    if(field.length || row.length){ row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  // Procura uma célula cujo texto contenha o rótulo (ex.: "Total Gasto") em qualquer
+  // linha/coluna da faixa buscada, e retorna o primeiro valor não vazio à direita dela
+  // na mesma linha — assim continua funcionando mesmo se a planilha ganhar/perder linhas.
+  function findLabelValue(rows, labelText){
+    var target = labelText.trim().toLowerCase();
+    for(var r=0;r<rows.length;r++){
+      for(var c=0;c<rows[r].length;c++){
+        var cell = (rows[r][c]||'').trim().toLowerCase();
+        if(cell.indexOf(target) !== -1 && cell.length < target.length + 5){
+          for(var c2=c+1;c2<rows[r].length;c2++){
+            var v = (rows[r][c2]||'').trim();
+            if(v) return v;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  async function fetchRangeRows(sheetName, range){
     var res = await fetch(gvizUrl(sheetName, range), {cache:'no-store'});
     if(!res.ok) throw new Error('HTTP ' + res.status + ' ao buscar ' + range);
     var text = await res.text();
-    return stripQuotes(text);
+    return parseCsv(text);
   }
 
   function renderCountdown(){
@@ -2341,18 +2379,18 @@ function initPmsPanel(){
     root.getElementById('quarter-label').textContent = 'Prestação de contas · ' + quarterOrdinal + ' ' + new Date().getFullYear();
 
     try {
-      var results = await Promise.all([
-        fetchCell(quarterTab.sheet, quarterTab.gastoCell),
-        fetchCell(quarterTab.sheet, SALDO_CELL),
-        fetchCell(quarterTab.sheet, TOTAL_CELL)
-      ]);
-      var gastoNum = parseBRL(results[0]);
-      var saldoNum = parseBRL(results[1]);
-      var totalNum = parseBRL(results[2]);
+      var rows = await fetchRangeRows(quarterTab.sheet, SEARCH_RANGE);
+      var gastoRaw = findLabelValue(rows, GASTO_LABEL);
+      var saldoRaw = findLabelValue(rows, SALDO_LABEL);
+      var gastoNum = gastoRaw != null ? parseBRL(gastoRaw) : null;
+      var saldoNum = saldoRaw != null ? parseBRL(saldoRaw) : null;
+      // O repasse trimestral é fixo (mesmo valor a cada 3 meses); evita depender de
+      // mais uma célula da planilha para compor o total do medidor.
+      var totalNum = PERIOD_AMOUNT;
 
-      root.getElementById('tile-gasto').textContent = gastoNum != null ? formatBRL(gastoNum) : results[0];
+      root.getElementById('tile-gasto').textContent = gastoNum != null ? formatBRL(gastoNum) : (gastoRaw || 'rótulo "' + GASTO_LABEL + '" não encontrado na aba');
       root.getElementById('tile-gasto').classList.remove('loading');
-      root.getElementById('tile-saldo').textContent = saldoNum != null ? formatBRL(saldoNum) : results[1];
+      root.getElementById('tile-saldo').textContent = saldoNum != null ? formatBRL(saldoNum) : (saldoRaw || 'rótulo "' + SALDO_LABEL + '" não encontrado na aba');
       root.getElementById('tile-saldo').classList.remove('loading');
 
       renderStatus(gastoNum);
