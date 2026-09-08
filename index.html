@@ -1798,13 +1798,33 @@ function _periodoPassaMes(dtStr, mesIdx){
   }
   return false;
 }
-function _quinzenaNoMes(dtStr, mesIdx){
-  // Uma quinzena de férias pertence ao mês em que ELA COMEÇA (data de início), ponto.
-  // Não conta "de raspão" um período que apenas encosta no mês seguinte por 1 dia.
-  if(!dtStr) return false;
-  const d = parseDMY(dtStr);
-  if(!d) return false;
-  return d.getMonth() === mesIdx;
+function _faixaQuinzenaNoMes(dtStr, mesIdx){
+  // Quinzena de verdade: dias 1-15 = 1ª, dias 16-fim = 2ª. Uma ausência de 15 dias pode
+  // cair a cavaleiro entre as duas — decide pelo lado onde ela passa MAIS dias (maior período de afastamento).
+  // Retorna 0 (não passa por este mês), 1 (maioria nos dias 1-15) ou 2 (maioria nos dias 16-fim).
+  if(!dtStr) return 0;
+  const inicio = parseDMY(dtStr);
+  if(!inicio) return 0;
+  const fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 14);
+  const msDia = 86400000;
+  const anoI = inicio.getFullYear(), anoF = fim.getFullYear();
+  for(let ano = anoI; ano <= anoF; ano++){
+    const mesIni = new Date(ano, mesIdx, 1);
+    const mesFim = new Date(ano, mesIdx+1, 0);
+    const ovIni = inicio > mesIni ? inicio : mesIni;
+    const ovFim = fim < mesFim ? fim : mesFim;
+    if(ovIni > ovFim) continue; // não passa por este mês nesse ano
+    const cortePrimeira = new Date(ano, mesIdx, 15);
+    const inicioSegunda = new Date(ano, mesIdx, 16);
+    const fim1 = ovFim < cortePrimeira ? ovFim : cortePrimeira;
+    const dias1 = fim1 >= ovIni ? Math.round((fim1 - ovIni) / msDia) + 1 : 0;
+    const ini2 = ovIni > inicioSegunda ? ovIni : inicioSegunda;
+    const dias2 = ovFim >= ini2 ? Math.round((ovFim - ini2) / msDia) + 1 : 0;
+    if(dias1 === 0 && dias2 === 0) continue;
+    return dias1 >= dias2 ? 1 : 2;
+  }
+  return 0;
 }
 function _feriasBlocos(mesFiltro, ebFiltro, prFiltro, quinzenaFiltro){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -1815,16 +1835,22 @@ function _feriasBlocos(mesFiltro, ebFiltro, prFiltro, quinzenaFiltro){
   const mesesLoop = mesFiltro ? [parseInt(mesFiltro,10)] : Array.from({length:12},(_,i)=>i+1);
   mesesLoop.forEach(i=>{
     const mesIdx = i - 1; // 0-based
-    const em1=SRC.filter(d=>_quinzenaNoMes(d.ferias1, mesIdx));
-    const em2=SRC.filter(d=>_quinzenaNoMes(d.ferias2, mesIdx));
+    const em1=[], em2=[];
+    SRC.forEach(d=>{
+      const f1=_faixaQuinzenaNoMes(d.ferias1, mesIdx);
+      const f2=_faixaQuinzenaNoMes(d.ferias2, mesIdx);
+      const m1=[]; if(f1===1)m1.push(d.ferias1); if(f2===1)m1.push(d.ferias2);
+      const m2=[]; if(f1===2)m2.push(d.ferias1); if(f2===2)m2.push(d.ferias2);
+      if(m1.length) em1.push({...d, _matchDate:m1[0], _quinzenaLabel:'1ª'});
+      if(m2.length) em2.push({...d, _matchDate:m2[0], _quinzenaLabel:'2ª'});
+    });
     let itens;
     if(quinzenaFiltro==='1'){
       itens=em1;
     } else if(quinzenaFiltro==='2'){
       itens=em2;
     } else {
-      const vistos=new Set();
-      itens=[...em1,...em2].filter(d=>{if(vistos.has(d.id))return false;vistos.add(d.id);return true;});
+      itens=[...em1,...em2];
     }
     if(!itens.length) return;
     const pct1=totalEfetivo?(em1.length/totalEfetivo*100):0;
@@ -1845,7 +1871,7 @@ function buildFeriasPreview(){
   if(!mm){preview.style.display='none';content.innerHTML='';return;}
   const blocos=_feriasBlocos(mm, ebFil, prFil, qz);
   const qzLbl = qz==='1' ? ' — 1ª Quinzena' : qz==='2' ? ' — 2ª Quinzena' : '';
-  const showQ1 = qz!=='2', showQ2 = qz!=='1';
+  const mostrarColQz = !qz; // no modo "Ambas" mostra de qual quinzena é cada linha
   if(!blocos.length){
     preview.style.display='block';
     content.innerHTML='<p style="color:#888;font-size:13px;text-align:center;padding:16px 0">Nenhuma férias registrada para este mês'+(qz?' nesta quinzena':'')+'.</p>';
@@ -1853,16 +1879,17 @@ function buildFeriasPreview(){
   }
   const b=blocos[0];
   let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px"><h2 style="margin:0;font-size:16px;color:#1a1a2e;font-family:'Barlow Condensed';letter-spacing:1px">📅 FÉRIAS — ${b.mes.toUpperCase()}${qzLbl}</h2><span style="font-size:11px;color:#666;background:#e8eaf0;padding:3px 10px;border-radius:20px">${b.itens.length} militar${b.itens.length!==1?'es':''}</span></div>`;
-  html+=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap"><span style="font-size:11px;background:#eaf2fb;color:#1565c0;padding:4px 10px;border-radius:20px;font-weight:600">1ª Quinzena: ${b.count1} (${b.pct1.toFixed(1)}% do efetivo)</span><span style="font-size:11px;background:#eafbf0;color:#1e8449;padding:4px 10px;border-radius:20px;font-weight:600">2ª Quinzena: ${b.count2} (${b.pct2.toFixed(1)}% do efetivo)</span></div>`;
+  html+=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap"><span style="font-size:11px;background:#eaf2fb;color:#1565c0;padding:4px 10px;border-radius:20px;font-weight:600">1ª Quinzena (dias 1-15): ${b.count1} (${b.pct1.toFixed(1)}% do efetivo)</span><span style="font-size:11px;background:#eafbf0;color:#1e8449;padding:4px 10px;border-radius:20px;font-weight:600">2ª Quinzena (dias 16-fim): ${b.count2} (${b.pct2.toFixed(1)}% do efetivo)</span></div>`;
   let thead=`<th style="text-align:left;padding:9px 12px;font-weight:700">Nome</th><th style="text-align:left;padding:9px 12px;font-weight:700">E.B.</th><th style="text-align:left;padding:9px 12px;font-weight:700">RE</th>`;
-  if(showQ1) thead+=`<th style="text-align:left;padding:9px 12px;font-weight:700">1ª Quinzena</th>`;
-  if(showQ2) thead+=`<th style="text-align:left;padding:9px 12px;font-weight:700">2ª Quinzena</th>`;
+  if(mostrarColQz) thead+=`<th style="text-align:left;padding:9px 12px;font-weight:700">Quinzena</th>`;
+  thead+=`<th style="text-align:left;padding:9px 12px;font-weight:700">Período</th>`;
   html+=`<table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)"><thead><tr style="background:#1a1a2e;color:#fff">${thead}</tr></thead><tbody>`;
   b.itens.forEach((d,idx)=>{
     const bg=idx%2===0?'#fff':'#f4f6fb';
     let cols=`<td style="padding:8px 12px;border-bottom:1px solid #e8eaf0;color:#111">${d.nome||'—'}</td><td style="padding:8px 12px;border-bottom:1px solid #e8eaf0;color:#333">${d.eb||'—'}</td><td style="padding:8px 12px;border-bottom:1px solid #e8eaf0;color:#333;font-family:monospace">${d.re||'—'}</td>`;
-    if(showQ1) cols+=`<td style="padding:8px 12px;border-bottom:1px solid #e8eaf0;color:#1565c0;font-weight:600">${d.ferias1||'—'}</td>`;
-    if(showQ2) cols+=`<td style="padding:8px 12px;border-bottom:1px solid #e8eaf0;color:#1565c0;font-weight:600">${d.ferias2||'—'}</td>`;
+    if(mostrarColQz) cols+=`<td style="padding:8px 12px;border-bottom:1px solid #e8eaf0">${d._quinzenaLabel}</td>`;
+    const periodo = d._matchDate ? (d._matchDate+' a '+addDays(d._matchDate,14)) : '—';
+    cols+=`<td style="padding:8px 12px;border-bottom:1px solid #e8eaf0;color:#1565c0;font-weight:600">${periodo}</td>`;
     html+=`<tr style="background:${bg}">${cols}</tr>`;
   });
   html+='</tbody></table>';
@@ -1879,19 +1906,20 @@ function printFeriasMes(){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const blocos=_feriasBlocos(mm, ebFil, prFil, qz);
   const qzLbl = qz==='1' ? ' — 1ª Quinzena' : qz==='2' ? ' — 2ª Quinzena' : '';
-  const showQ1 = qz!=='2', showQ2 = qz!=='1';
+  const mostrarColQz = !qz;
   const titulo = mm ? `Férias — ${meses[parseInt(mm,10)-1]}${qzLbl}` : `Relatório de Férias por Mês${qzLbl}`;
   const blocosHtml=blocos.map(b=>{
     let thead=`<th style="text-align:left;padding:8px 10px">Nome</th><th style="text-align:left;padding:8px 10px">E.B.</th><th style="text-align:left;padding:8px 10px">RE</th>`;
-    if(showQ1) thead+=`<th style="text-align:left;padding:8px 10px">1º Bloco (Início e Término)</th>`;
-    if(showQ2) thead+=`<th style="text-align:left;padding:8px 10px">2º Bloco (Início e Término)</th>`;
+    if(mostrarColQz) thead+=`<th style="text-align:left;padding:8px 10px">Quinzena</th>`;
+    thead+=`<th style="text-align:left;padding:8px 10px">Período (Início e Término)</th>`;
     const rows=b.itens.map((d,idx)=>{
       let cols=`<td style="padding:7px 10px;border-bottom:1px solid #dde">${d.nome||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.eb||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;font-family:monospace">${d.re||'—'}</td>`;
-      if(showQ1) cols+=`<td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias1 ? d.ferias1 + ' a ' + addDays(d.ferias1, 14) : '—'}</td>`;
-      if(showQ2) cols+=`<td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias2 ? d.ferias2 + ' a ' + addDays(d.ferias2, 14) : '—'}</td>`;
+      if(mostrarColQz) cols+=`<td style="padding:7px 10px;border-bottom:1px solid #dde">${d._quinzenaLabel}</td>`;
+      const periodo = d._matchDate ? (d._matchDate+' a '+addDays(d._matchDate,14)) : '—';
+      cols+=`<td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${periodo}</td>`;
       return `<tr style="background:${idx%2===0?'#fff':'#f4f6fb'}">${cols}</tr>`;
     }).join('');
-    return `<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 4px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><div style="margin:6px 0 10px;font-size:12px;color:#444">1ª Quinzena: <b>${b.count1}</b> (${b.pct1.toFixed(1)}% do efetivo) &nbsp;|&nbsp; 2ª Quinzena: <b>${b.count2}</b> (${b.pct2.toFixed(1)}% do efetivo)</div><table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff">${thead}</tr></thead><tbody>${rows}</tbody></table></section>`;
+    return `<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 4px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><div style="margin:6px 0 10px;font-size:12px;color:#444">1ª Quinzena (1-15): <b>${b.count1}</b> (${b.pct1.toFixed(1)}% do efetivo) &nbsp;|&nbsp; 2ª Quinzena (16-fim): <b>${b.count2}</b> (${b.pct2.toFixed(1)}% do efetivo)</div><table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff">${thead}</tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join('');
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>${titulo}</title><style>body{font-family:Arial,sans-serif;background:#f5f7fa;color:#111;padding:24px}h1{color:#1a1a2e;font-size:20px;margin-bottom:20px;border-bottom:3px solid #1a1a2e;padding-bottom:8px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:28px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}.print-btn{position:fixed;top:12px;right:16px;padding:8px 18px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)}@media print{body{background:#fff;padding:0}.wrap{max-width:none;padding:0;box-shadow:none;border-radius:0}.print-btn{display:none}}</style></head><body><button class="print-btn" onclick="window.print()">🖨 Imprimir</button><div class="wrap"><h1>${titulo}</h1>${blocosHtml||'<p style="color:#888">Nenhum registro de férias.</p>'}</div></body></html>`);
