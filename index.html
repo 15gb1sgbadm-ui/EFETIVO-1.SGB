@@ -4,6 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dashboard — 1º SGB</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--red:#D72638;--rd:#A81C28;--y:#F5A623;--bg:#0D0F14;--s1:#161A22;--s2:#1E2330;--s3:#252B3B;--b:rgba(255,255,255,.08);--t:#F0F2F7;--m:#7A8299;--g:#27AE60;--bl:#2980B9;--pu:#8E44AD}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -355,6 +356,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <input type="text" id="si" placeholder="🔍  Nome, RE, graduação..." oninput="rSearch()">
     <select id="feb" onchange="rSearch()"><option value="">Todas as E.B.</option></select>
     <select id="fpr" onchange="rSearch()"><option value="">Todas as Prontidões</option></select>
+    <button class="btnr" onclick="exportBuscaExcel()" style="background:rgba(39,174,96,.2);border-color:rgba(39,174,96,.5);color:#27AE60">📊 Relação (Excel)</button>
   </div>
 
   <div class="rc" id="sc"></div>
@@ -491,6 +493,12 @@ tr:hover td{background:rgba(255,255,255,.03)}
       <option value="10">Outubro</option>
       <option value="11">Novembro</option>
       <option value="12">Dezembro</option>
+    </select>
+    <label style="font-size:12px;color:var(--m);font-weight:600">Quinzena:</label>
+    <select id="fer-quinzena-sel" onchange="buildFeriasPreview()" style="background:var(--s2);border:1px solid var(--b);color:var(--t);border-radius:8px;padding:6px 12px;font-size:12px;font-family:'Barlow';cursor:pointer">
+      <option value="">— Ambas —</option>
+      <option value="1">1ª Quinzena</option>
+      <option value="2">2ª Quinzena</option>
     </select>
     <button class="btnr" onclick="printFeriasMes()" style="background:rgba(215,38,56,.2);border-color:rgba(215,38,56,.5);color:var(--red)">🖨 Imprimir Férias</button>
     <button class="btnr" onclick="printFeriasEB()" style="background:rgba(41,128,185,.2);border-color:rgba(41,128,185,.5);color:#60A5FA">🏠 Imprimir por E.B.</button>
@@ -1532,6 +1540,34 @@ function rSearch(){
   if(!res.length)tb.innerHTML='<tr><td colspan="12"><div class="empty"><div class="ei">🔍</div>Nenhum resultado.</div></td></tr>';
 }
 
+function exportBuscaExcel(){
+  const siEl=document.getElementById('si');
+  const q=siEl&&siEl.value?siEl.value.toLowerCase().trim():'';
+  const eb=(document.getElementById('feb')||{}).value||'';
+  const pr=(document.getElementById('fpr')||{}).value||'';
+  const res=DATA.filter(d=>(!eb||d.eb===eb)&&(!pr||d.prontidao===pr)&&(!q||d.nome.toLowerCase().includes(q)||(d.re||'').toLowerCase().includes(q)));
+  if(!res.length){alert('Nenhum militar encontrado com os filtros atuais.');return;}
+  if(typeof XLSX==='undefined'){alert('Não foi possível carregar a biblioteca de exportação (verifique a conexão com a internet) e tente novamente.');return;}
+  const rows=res.map(d=>{
+    const nome=d.nome||'';
+    const re=d.re||'';
+    let grad='',nomeCompleto=nome;
+    const idx=re?nome.indexOf(re):-1;
+    if(idx!==-1){
+      grad=nome.substring(0,idx).trim();
+      nomeCompleto=nome.substring(idx+re.length).trim();
+    }
+    return{'Graduação':grad,'RE':re,'Nome Completo':nomeCompleto,'Cursos':(d.cursos||[]).join(', ')};
+  });
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:14},{wch:12},{wch:34},{wch:60}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Militares');
+  const hj=new Date();
+  const dd=String(hj.getDate()).padStart(2,'0'),mmS=String(hj.getMonth()+1).padStart(2,'0'),yy=hj.getFullYear();
+  XLSX.writeFile(wb,`Relacao_Militares_${dd}-${mmS}-${yy}.xlsx`);
+}
+
 function rSearchCivis(){
   const q=document.getElementById('si-civis').value.toLowerCase().trim();
   const grupo=document.getElementById('grupo-civis').value;
@@ -1762,38 +1798,53 @@ function _periodoPassaMes(dtStr, mesIdx){
   }
   return false;
 }
-function _feriasBlocos(mesFiltro, ebFiltro, prFiltro){
+function _feriasBlocos(mesFiltro, ebFiltro, prFiltro, quinzenaFiltro){
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const blocos=[];
   let SRC=ebFiltro?DATA.filter(d=>d.eb===ebFiltro):DATA;
   if(prFiltro)SRC=SRC.filter(d=>d.prontidao===prFiltro);
+  const totalEfetivo=SRC.length;
   const mesesLoop = mesFiltro ? [parseInt(mesFiltro,10)] : Array.from({length:12},(_,i)=>i+1);
   mesesLoop.forEach(i=>{
     const mesIdx = i - 1; // 0-based
-    const itens=SRC.filter(d=>
-      _periodoPassaMes(d.ferias1, mesIdx) || _periodoPassaMes(d.ferias2, mesIdx)
-    );
+    const em1=SRC.filter(d=>_periodoPassaMes(d.ferias1, mesIdx));
+    const em2=SRC.filter(d=>_periodoPassaMes(d.ferias2, mesIdx));
+    let itens;
+    if(quinzenaFiltro==='1'){
+      itens=em1;
+    } else if(quinzenaFiltro==='2'){
+      itens=em2;
+    } else {
+      const vistos=new Set();
+      itens=[...em1,...em2].filter(d=>{if(vistos.has(d.id))return false;vistos.add(d.id);return true;});
+    }
     if(!itens.length) return;
-    blocos.push({mes:meses[mesIdx], itens});
+    const pct1=totalEfetivo?(em1.length/totalEfetivo*100):0;
+    const pct2=totalEfetivo?(em2.length/totalEfetivo*100):0;
+    blocos.push({mes:meses[mesIdx], itens, totalEfetivo, count1:em1.length, count2:em2.length, pct1, pct2});
   });
   return blocos;
 }
 function buildFeriasPreview(){
   const sel=document.getElementById('fer-mes-sel');
+  const qSel=document.getElementById('fer-quinzena-sel');
   const preview=document.getElementById('fer-print-preview');
   const content=document.getElementById('fer-preview-content');
   const mm=sel?sel.value:'';
+  const qz=qSel?qSel.value:'';
   const ebFil=(document.getElementById('fer-eb-sel')||{}).value||'';
   const prFil=(document.getElementById('fer-pr-sel')||{}).value||'';
   if(!mm){preview.style.display='none';content.innerHTML='';return;}
-  const blocos=_feriasBlocos(mm, ebFil, prFil);
+  const blocos=_feriasBlocos(mm, ebFil, prFil, qz);
+  const qzLbl = qz==='1' ? ' — 1ª Quinzena' : qz==='2' ? ' — 2ª Quinzena' : '';
   if(!blocos.length){
     preview.style.display='block';
-    content.innerHTML='<p style="color:#888;font-size:13px;text-align:center;padding:16px 0">Nenhuma férias registrada para este mês.</p>';
+    content.innerHTML='<p style="color:#888;font-size:13px;text-align:center;padding:16px 0">Nenhuma férias registrada para este mês'+(qz?' nesta quinzena':'')+'.</p>';
     return;
   }
   const b=blocos[0];
-  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:#1a1a2e;font-family:'Barlow Condensed';letter-spacing:1px">📅 FÉRIAS — ${b.mes.toUpperCase()}</h2><span style="font-size:11px;color:#666;background:#e8eaf0;padding:3px 10px;border-radius:20px">${b.itens.length} militar${b.itens.length!==1?'es':''}</span></div>`;
+  let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px"><h2 style="margin:0;font-size:16px;color:#1a1a2e;font-family:'Barlow Condensed';letter-spacing:1px">📅 FÉRIAS — ${b.mes.toUpperCase()}${qzLbl}</h2><span style="font-size:11px;color:#666;background:#e8eaf0;padding:3px 10px;border-radius:20px">${b.itens.length} militar${b.itens.length!==1?'es':''}</span></div>`;
+  html+=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap"><span style="font-size:11px;background:#eaf2fb;color:#1565c0;padding:4px 10px;border-radius:20px;font-weight:600">1ª Quinzena: ${b.count1} (${b.pct1.toFixed(1)}% do efetivo)</span><span style="font-size:11px;background:#eafbf0;color:#1e8449;padding:4px 10px;border-radius:20px;font-weight:600">2ª Quinzena: ${b.count2} (${b.pct2.toFixed(1)}% do efetivo)</span></div>`;
   html+=`<table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)"><thead><tr style="background:#1a1a2e;color:#fff"><th style="text-align:left;padding:9px 12px;font-weight:700">Nome</th><th style="text-align:left;padding:9px 12px;font-weight:700">E.B.</th><th style="text-align:left;padding:9px 12px;font-weight:700">RE</th><th style="text-align:left;padding:9px 12px;font-weight:700">1ª Quinzena</th><th style="text-align:left;padding:9px 12px;font-weight:700">2ª Quinzena</th></tr></thead><tbody>`;
   b.itens.forEach((d,idx)=>{
     const bg=idx%2===0?'#fff':'#f4f6fb';
@@ -1805,13 +1856,16 @@ function buildFeriasPreview(){
 }
 function printFeriasMes(){
   const sel=document.getElementById('fer-mes-sel');
+  const qSel=document.getElementById('fer-quinzena-sel');
   const mm=sel?sel.value:'';
+  const qz=qSel?qSel.value:'';
   const ebFil=(document.getElementById('fer-eb-sel')||{}).value||'';
   const prFil=(document.getElementById('fer-pr-sel')||{}).value||'';
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const blocos=_feriasBlocos(mm, ebFil, prFil);
-  const titulo = mm ? `Férias — ${meses[parseInt(mm,10)-1]}` : 'Relatório de Férias por Mês';
-  const blocosHtml=blocos.map(b=>`<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 10px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff"><th style="text-align:left;padding:8px 10px">Nome</th><th style="text-align:left;padding:8px 10px">E.B.</th><th style="text-align:left;padding:8px 10px">RE</th><th style="text-align:left;padding:8px 10px">1º Bloco (Início e Término)</th><th style="text-align:left;padding:8px 10px">2º Bloco (Início e Término)</th></tr></thead><tbody>${b.itens.map((d,idx)=>`<tr style="background:${idx%2===0?'#fff':'#f4f6fb'}"><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.nome||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.eb||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;font-family:monospace">${d.re||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias1 ? d.ferias1 + ' a ' + addDays(d.ferias1, 14) : '—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias2 ? d.ferias2 + ' a ' + addDays(d.ferias2, 14) : '—'}</td></tr>`).join('')}</tbody></table></section>`).join('');
+  const blocos=_feriasBlocos(mm, ebFil, prFil, qz);
+  const qzLbl = qz==='1' ? ' — 1ª Quinzena' : qz==='2' ? ' — 2ª Quinzena' : '';
+  const titulo = mm ? `Férias — ${meses[parseInt(mm,10)-1]}${qzLbl}` : `Relatório de Férias por Mês${qzLbl}`;
+  const blocosHtml=blocos.map(b=>`<section style="margin-bottom:28px;break-inside:avoid"><h2 style="margin:0 0 4px;font-size:17px;color:#1a1a2e;font-family:Arial,sans-serif;border-bottom:2px solid #1a1a2e;padding-bottom:6px">${b.mes} <span style="font-size:12px;color:#666;font-weight:400">(${b.itens.length} militar${b.itens.length!==1?'es':''})</span></h2><div style="margin:6px 0 10px;font-size:12px;color:#444">1ª Quinzena: <b>${b.count1}</b> (${b.pct1.toFixed(1)}% do efetivo) &nbsp;|&nbsp; 2ª Quinzena: <b>${b.count2}</b> (${b.pct2.toFixed(1)}% do efetivo)</div><table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff"><thead><tr style="background:#1a1a2e;color:#fff"><th style="text-align:left;padding:8px 10px">Nome</th><th style="text-align:left;padding:8px 10px">E.B.</th><th style="text-align:left;padding:8px 10px">RE</th><th style="text-align:left;padding:8px 10px">1º Bloco (Início e Término)</th><th style="text-align:left;padding:8px 10px">2º Bloco (Início e Término)</th></tr></thead><tbody>${b.itens.map((d,idx)=>`<tr style="background:${idx%2===0?'#fff':'#f4f6fb'}"><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.nome||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde">${d.eb||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;font-family:monospace">${d.re||'—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias1 ? d.ferias1 + ' a ' + addDays(d.ferias1, 14) : '—'}</td><td style="padding:7px 10px;border-bottom:1px solid #dde;color:#1565c0;font-weight:600">${d.ferias2 ? d.ferias2 + ' a ' + addDays(d.ferias2, 14) : '—'}</td></tr>`).join('')}</tbody></table></section>`).join('');
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>${titulo}</title><style>body{font-family:Arial,sans-serif;background:#f5f7fa;color:#111;padding:24px}h1{color:#1a1a2e;font-size:20px;margin-bottom:20px;border-bottom:3px solid #1a1a2e;padding-bottom:8px}.wrap{max-width:1100px;margin:0 auto;background:#fff;padding:28px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}.print-btn{position:fixed;top:12px;right:16px;padding:8px 18px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)}@media print{body{background:#fff;padding:0}.wrap{max-width:none;padding:0;box-shadow:none;border-radius:0}.print-btn{display:none}}</style></head><body><button class="print-btn" onclick="window.print()">🖨 Imprimir</button><div class="wrap"><h1>${titulo}</h1>${blocosHtml||'<p style="color:#888">Nenhum registro de férias.</p>'}</div></body></html>`);
   w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
@@ -2512,8 +2566,8 @@ function buildFerias(){
   const cb=SRC.filter(d=>d.ferias1&&d.ferias2).length;
   document.getElementById('fer-stats').innerHTML=`
     <div class="alert-card ok"><div class="alert-num" style="color:var(--g)">${cb}</div><div class="alert-lbl">Ambas quinzenas</div></div>
-    <div class="alert-card"><div class="alert-num" style="color:var(--y)">${c1}</div><div class="alert-lbl">1ª quinzena</div></div>
-    <div class="alert-card"><div class="alert-num" style="color:#60A5FA">${c2}</div><div class="alert-lbl">2ª quinzena</div></div>
+    <div class="alert-card"><div class="alert-num" style="color:var(--y)">${c1}</div><div class="alert-lbl">1ª quinzena${tot?` (${(c1/tot*100).toFixed(1)}%)`:''}</div></div>
+    <div class="alert-card"><div class="alert-num" style="color:#60A5FA">${c2}</div><div class="alert-lbl">2ª quinzena${tot?` (${(c2/tot*100).toFixed(1)}%)`:''}</div></div>
     <div class="alert-card danger"><div class="alert-num" style="color:var(--red)">${tot-cb}</div><div class="alert-lbl">Incompleto</div></div>`;
 
   const grid=document.getElementById('fer-grid');grid.innerHTML='';
